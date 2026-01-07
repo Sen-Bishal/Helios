@@ -1,3 +1,4 @@
+//TODO Lots to clean up in optimization before phase 04
 use bevy_ecs::prelude::*;
 use glam::Vec3;
 use crate::units::{Position3D, Distance};
@@ -15,6 +16,7 @@ pub fn laser_droplet_interaction_system(
         }
 
         for (droplet_entity, droplet_pos, mut state, mut shape) in droplets.iter_mut() {
+            // Check if laser hits droplet based on current shape
             let hit = match *shape {
                 CollisionShape::Sphere { radius } => {
                     ray_sphere_intersection(laser_pos.0, droplet_pos.0, radius)
@@ -32,41 +34,53 @@ pub fn laser_droplet_interaction_system(
                         *state = DropletState::Pancaked;
                         if let CollisionShape::Sphere { radius } = *shape {
                             *shape = CollisionShape::Disk {
-                                radius: radius * 2, 
-                                thickness: radius / 4, 
+                                radius: radius * 2, // Flatten increases surface area
+                                thickness: radius / 4, // Much thinner
                             };
                         }
                     }
                     (DropletState::Pancaked, false) => {
                         *state = DropletState::Plasma;
+                        
+                        // Spawn photon packets from the plasma
                         spawn_photon_packets(
                             &mut commands,
                             droplet_pos.0,
                             laser.power,
                         );
 
+                        // Schedule droplet for debris conversion after plasma lifetime
                         commands.entity(droplet_entity).insert(Lifetime::new(0.000_01));
                     }
 
-                    _ => {}
+                    _ => {} // Invalid state transitions are ignored
                 }
-                break;
+
+                break; // Laser can only hit one droplet
             }
         }
     }
 }
 
+/// Ray-sphere intersection test
+/// Returns true if ray from laser_pos intersects sphere at droplet_pos with given radius
 fn ray_sphere_intersection(
     laser_pos: Position3D,
     droplet_pos: Position3D,
     radius: Distance,
 ) -> bool {
+    // Convert to Vec3 for math
     let laser = laser_pos.to_vec3();
     let droplet = droplet_pos.to_vec3();
     let r = radius.as_meters_f64() as f32;
+
+    // Simple distance check (assuming laser is point source at exact position)
     let distance = laser.distance(droplet);
     distance <= r
 }
+
+/// Ray-disk intersection test
+/// Disk is assumed perpendicular to the X-axis (travel direction)
 fn ray_disk_intersection(
     laser_pos: Position3D,
     droplet_pos: Position3D,
@@ -77,34 +91,34 @@ fn ray_disk_intersection(
     let droplet = droplet_pos.to_vec3();
     let r = radius.as_meters_f64() as f32;
     let t = thickness.as_meters_f64() as f32;
+
+    // Check if laser is within thickness along X
     let x_diff = (laser.x - droplet.x).abs();
     if x_diff > t / 2.0 {
         return false;
     }
+
+    // Check if laser is within radius in YZ plane
     let yz_distance = ((laser.y - droplet.y).powi(2) + (laser.z - droplet.z).powi(2)).sqrt();
     yz_distance <= r
 }
+
+/// Spawns photon packets representing EUV light emission from plasma
 fn spawn_photon_packets(
     commands: &mut Commands,
     plasma_position: Position3D,
     laser_power: f32,
 ) {
-    
-    // TODO : Refine photon packet generation based on laser parameters
-    // TODO : Angular dist.
+    const PACKET_COUNT: u32 = 1000;
+    const EUV_WAVELENGTH: f32 = 13.5e-9;
 
-    const PHOTONS_PER_PACKET: u64 = 1_000_000_000_000; // 10^12 photons per packet
-    const PACKET_COUNT: u32 = 1000; // Spawn 1000 packets total
-    const EUV_WAVELENGTH: f32 = 13.5e-9; // 13.5 nanometers
+    const PLANCK: f64 = 6.626e-34;
+    const LIGHT_SPEED: f64 = 3e8;
+    let photon_energy = (PLANCK * LIGHT_SPEED / EUV_WAVELENGTH as f64) as f32;
 
-    // Calculate energy per photon (E = hc/λ)
-    const PLANCK: f64 = 6.626e-34; // J·s
-    const LIGHT_SPEED: f64 = 3e8; // m/s
-    let photon_energy = (PLANCK * LIGHT_SPEED / EUV_WAVELENGTH as f64) as f32; // Joules
-
-    // Total conversion efficiency: ~2% of laser power converts to EUV
     let euv_power = laser_power * 0.02;
     let total_photons = (euv_power / photon_energy) as u64;
+
     use rand::Rng;
     let mut rng = rand::thread_rng();
 
@@ -117,19 +131,19 @@ fn spawn_photon_packets(
             phi.sin() * theta.sin(),
             phi.cos(),
         );
+
         let velocity = direction * 3e8;
 
         commands.spawn((
             Position(plasma_position),
             Velocity(velocity),
-            EntityType::PhotonPacket {
-                count: total_photons / PACKET_COUNT as u64,
-            },
-            Lifetime::new(0.000_1), 
+            crate::raytracing::PhotonPacket::new(total_photons / PACKET_COUNT as u64),
+            Lifetime::new(0.000_1),
         ));
     }
 }
 
+/// System that converts plasma back to debris after lifetime expires
 pub fn plasma_to_debris_system(
     mut query: Query<(&mut DropletState, &Lifetime)>,
 ) {
@@ -140,17 +154,22 @@ pub fn plasma_to_debris_system(
     }
 }
 
+/// System that moves all entities based on velocity
 pub fn physics_movement_system(
     time: Res<SimulationTime>,
     mut query: Query<(&mut Position, &Velocity)>,
 ) {
     for (mut pos, vel) in query.iter_mut() {
+        // Convert velocity (m/s) to displacement over delta time
         let displacement = vel.0 * time.delta_seconds;
+        
+        // Update position (convert Vec3 back to Position3D with precision)
         let new_pos_vec = pos.0.to_vec3() + displacement;
         pos.0 = Position3D::from_vec3(new_pos_vec);
     }
 }
 
+/// System that cleans up entities whose lifetime has expired
 pub fn lifetime_system(
     mut commands: Commands,
     time: Res<SimulationTime>,
