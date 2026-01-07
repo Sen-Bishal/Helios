@@ -1,0 +1,205 @@
+# Rust build artifacts
+/target/
+**/*.rs.bk
+*.pdb
+
+# Cargo lock file (uncomment if building a library)
+# Cargo.lock
+
+# Generated documentation
+/doc/
+/target/doc/
+
+# Benchmark results
+/target/criterion/
+
+# IDE and editor files
+# VSCode
+.vscode/
+*.code-workspace
+
+# IntelliJ IDEA / CLion / RustRover
+.idea/
+*.iml
+*.ipr
+*.iws
+.idea_modules/
+
+# Vim
+*.swp
+*.swo
+*~
+.*.swp
+.*.swo
+
+# Emacs
+*~
+\#*\#
+.\#*
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Neovim
+.nvimrc
+.nvim/
+
+# Operating System files
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msm
+*.msp
+*.lnk
+
+# Linux
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*
+
+# Temporary files
+*.tmp
+*.temp
+*.log
+*.bak
+*.cache
+
+# Redis files (if running locally)
+dump.rdb
+appendonly.aof
+*.rdb
+*.aof
+
+# Performance profiling
+perf.data
+perf.data.old
+flamegraph.svg
+*.profdata
+*.profraw
+
+# Coverage reports
+/coverage/
+*.profraw
+*.gcda
+*.gcno
+lcov.info
+tarpaulin-report.html
+
+# WASM build artifacts
+/pkg/
+wasm-pack.log
+
+# Node modules (if you have JS tooling)
+node_modules/
+package-lock.json
+yarn.lock
+
+# Benchmark outputs
+/benches/results/
+*.html
+
+# Test artifacts
+/tests/tmp/
+*.test
+
+# Environment and secrets
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+secrets.toml
+
+# Custom build scripts output
+/build/
+/dist/
+
+# Profiling and debugging
+*.dSYM/
+*.su
+*.idb
+*.pdb
+
+# Documentation build
+/book/
+
+# Clippy cache
+.clippy.toml.cache
+
+# Rustfmt backup files
+**/*.rs.bk
+
+# Criterion benchmark data
+criterion/
+
+# Valgrind output
+vgcore.*
+*.memcheck
+
+# Custom project artifacts
+/output/
+/cache/
+/data/
+*.db
+*.sqlite
+*.sqlite3
+
+# Compiled dynamic libraries
+*.so
+*.dylib
+*.dll
+
+# Compiled static libraries
+*.a
+*.lib
+
+# Executables
+*.exe
+*.out
+*.app
+
+# Large test files
+*.bin
+*.dat
+
+# Jupyter notebooks (if doing data analysis)
+.ipynb_checkpoints/
+*.ipynb
+
+# Python virtual environment (if mixing Rust with Python tools)
+venv/
+env/
+.Python
+
+# Terraform (if using for infrastructure)
+*.tfstate
+*.tfstate.*
+.terraform/
+
+# Docker
+.dockerignore
+docker-compose.override.yml
+
+# CI/CD artifacts
+.github/workflows/*.log
+
+# Custom ignore for your project
+# Add your project-specific ignores below
+/benchmarks/output/
+/research/data/
+/experiments/
