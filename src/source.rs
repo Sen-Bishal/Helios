@@ -34,7 +34,7 @@ impl Default for DropletGeneratorConfig{
             mass: 5e-9, // ~5 nanograms of tin
             radius: Distance::from_micrometers(30), // 30 μm diameter droplet
             spawn_position: Position3D::new(
-                Distance::from_millimeters(-500),
+                Distance::from_millimeters(-100),
                 Distance::ZERO,
                 Distance::ZERO,
             ),

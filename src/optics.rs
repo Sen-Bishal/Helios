@@ -4,6 +4,7 @@ use bevy_ecs::prelude::*;
 use glam::{Vec3, Quat};
 use crate::units::{Position3D, Distance};
 use crate::components::*;
+use crate::thermal::CoolingSystem;
 
 #[derive(Component, Debug, Clone)]
 pub struct MirrorSurface {
@@ -129,7 +130,7 @@ impl SurfaceGeometry {
     }
 }
 
-#[derive(Resource, Debug)]
+#[derive(Resource, Debug, Clone)]
 pub struct OpticalSystemConfig {
     pub collector_mirror: CollectorMirrorSpec,
     pub projection_mirrors: Vec<MirrorSpec>,
