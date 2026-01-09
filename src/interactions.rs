@@ -1,10 +1,14 @@
-//TODO Lots to clean up in optimization before phase 04
+//! Laser-droplet interaction physics
+//! 
+//! Handles ray-sphere/ray-disk collision detection and state transitions
+
 use bevy_ecs::prelude::*;
 use glam::Vec3;
 use crate::units::{Position3D, Distance};
 use crate::components::*;
 use crate::source::{DropletState, LaserBeam, SimulationTime};
 
+/// System that detects laser-droplet collisions and updates droplet states
 pub fn laser_droplet_interaction_system(
     mut commands: Commands,
     mut droplets: Query<(Entity, &Position, &mut DropletState, &mut CollisionShape), With<EntityType>>,
@@ -29,9 +33,14 @@ pub fn laser_droplet_interaction_system(
 
             if hit {
                 laser.has_fired = true;
+
+                // State transition based on laser type and current state
                 match (*state, laser.is_prepulse) {
+                    // Pre-pulse hits spherical droplet -> pancake it
                     (DropletState::Spherical, true) => {
                         *state = DropletState::Pancaked;
+                        
+                        // Transform geometry from sphere to disk
                         if let CollisionShape::Sphere { radius } = *shape {
                             *shape = CollisionShape::Disk {
                                 radius: radius * 2, // Flatten increases surface area
@@ -39,6 +48,8 @@ pub fn laser_droplet_interaction_system(
                             };
                         }
                     }
+
+                    // Main pulse hits pancaked droplet -> create plasma
                     (DropletState::Pancaked, false) => {
                         *state = DropletState::Plasma;
                         

@@ -1,10 +1,10 @@
-use bevy_ecs::prelude::*;
-use glam::Vec3;
-use rand::Rng;
-use crate::units::Position3D;
 use crate::components::*;
 use crate::optics::MirrorSurface;
 use crate::source::SimulationTime;
+use crate::units::Position3D;
+use bevy_ecs::prelude::*;
+use glam::Vec3;
+use rand::Rng;
 
 #[derive(Component, Debug)]
 pub struct PhotonPacket {
@@ -39,7 +39,16 @@ impl PhotonPacket {
 pub fn photon_mirror_interaction_system(
     mut commands: Commands,
     mut photons: Query<(Entity, &mut Position, &mut Velocity, &mut PhotonPacket)>,
-    mut mirrors: Query<(&Position, &MirrorSurface, &OpticalMaterial, &mut ThermalState), Without<PhotonPacket>>,
+    mut mirrors: Query<
+        (
+            &Position,
+            &MirrorSurface,
+            &OpticalMaterial,
+            &mut ThermalState,
+        ),
+        Without<PhotonPacket>,
+    >,
+    mut stats: ResMut<RayTracingStatistics>,
 ) {
     let mut rng = rand::thread_rng();
 
@@ -56,10 +65,9 @@ pub fn photon_mirror_interaction_system(
         let mut closest_distance = f32::INFINITY;
 
         for (mirror_pos, mirror_surface, material, _) in mirrors.iter() {
-            let (hit, hit_point, distance) = mirror_surface.geometry.ray_intersection(
-                ray_origin,
-                ray_direction,
-            );
+            let (hit, hit_point, distance) = mirror_surface
+                .geometry
+                .ray_intersection(ray_origin, ray_direction);
 
             if hit && distance < closest_distance && distance > 1e-6 {
                 if let Some(hit_pos) = hit_point {
@@ -76,24 +84,25 @@ pub fn photon_mirror_interaction_system(
             if reflects {
                 let incident = ray_direction;
                 let reflected = incident - 2.0 * incident.dot(normal) * normal;
-                
+
                 photon_pos.0 = hit_pos;
                 photon_vel.0 = reflected.normalize() * photon_vel.0.length();
                 packet.bounces += 1;
+                stats.total_reflections += 1;
             } else {
                 let absorbed_energy = packet.total_energy() * material.absorption;
-                
+
                 for (mirror_pos, mirror_surface, _, mut thermal) in mirrors.iter_mut() {
-                    let (hit, _, _) = mirror_surface.geometry.ray_intersection(
-                        ray_origin,
-                        ray_direction,
-                    );
+                    let (hit, _, _) = mirror_surface
+                        .geometry
+                        .ray_intersection(ray_origin, ray_direction);
                     if hit {
                         thermal.add_heat(absorbed_energy);
                         break;
                     }
                 }
 
+                stats.total_absorptions += 1;
                 commands.entity(photon_entity).despawn();
             }
         }
@@ -108,7 +117,7 @@ pub fn photon_cleanup_system(
 
     for (entity, pos, packet) in query.iter() {
         let distance = pos.0.to_vec3().length();
-        
+
         if distance > MAX_DISTANCE || packet.bounces >= PhotonPacket::MAX_BOUNCES {
             commands.entity(entity).despawn();
         }
@@ -128,7 +137,7 @@ pub fn raytracing_statistics_system(
     mut stats: ResMut<RayTracingStatistics>,
 ) {
     stats.active_photon_packets = photons.iter().count() as u32;
-    
+
     if stats.active_photon_packets > 0 {
         let total_bounces: u32 = photons.iter().map(|p| p.bounces).sum();
         stats.average_bounces = total_bounces as f32 / stats.active_photon_packets as f32;
@@ -151,7 +160,7 @@ mod tests {
         let incident = Vec3::new(1.0, -1.0, 0.0).normalize();
         let normal = Vec3::Y;
         let reflected = incident - 2.0 * incident.dot(normal) * normal;
-        
+
         assert!((reflected.y - 1.0 / 2.0_f32.sqrt()).abs() < 1e-6);
     }
 }

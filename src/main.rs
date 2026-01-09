@@ -1,13 +1,3 @@
-//! LITHOS: Lithography Integrated Thermal & Optical Simulator
-//! 
-//! A high-fidelity simulation of ASML's High-NA EUV lithography system
-//! 
-//! Architecture:
-//! - Hybrid precision: i128 for positions, f64 for physics
-//! - ECS-based (bevy_ecs) for entity management
-//! - Deterministic microsecond-level time stepping
-//! - Modular subsystems: Source, Optics, Mechanics, Thermal
-
 mod units;
 mod components;
 mod source;
@@ -25,25 +15,22 @@ use optics::*;
 use raytracing::*;
 use thermal::*;
 use gui::*;
+use units::*;
 use std::sync::{Arc, Mutex};
 use std::thread;
 
-/// Main simulation configuration
 #[derive(Debug)]
 struct SimulationConfig {
-    /// Microseconds per tick
     tick_duration: f32,
-    /// Total simulation duration (seconds)
     total_duration: f32,
-    /// Number of droplets to simulate in burst mode
     burst_count: u32,
 }
 
 impl Default for SimulationConfig {
     fn default() -> Self {
         Self {
-            tick_duration: 1e-6, // 1 microsecond ticks
-            total_duration: 0.02, // 2 milliseconds (100 droplets @ 50kHz)
+            tick_duration: 1e-6,
+            total_duration: 0.002,
             burst_count: 100,
         }
     }
@@ -51,8 +38,8 @@ impl Default for SimulationConfig {
 
 fn main() {
     println!("╔═══════════════════════════════════════════════════════╗");
-    println!("║  LITHOS - EUV Lithography Simulator                  ║");
-    println!("║  Launching GUI...                                    ║");
+    println!("║  LITHOS - EUV Lithography Simulator                   ║");
+    println!("║  Launching GUI...                                     ║");
     println!("╚═══════════════════════════════════════════════════════╝\n");
 
     let gui_state = Arc::new(Mutex::new(SimulationState::default()));
@@ -111,14 +98,30 @@ impl eframe::App for GuiWrapper {
     }
 }
 
-fn run_simulation(gui_state: Arc<Mutex<SimulationState>>) {
+fn spawn_mirrors_startup(mut commands: Commands) {
+    eprintln!("STARTUP: Spawning mirrors...");
+    
+    commands.spawn((
+        Position(Position3D::zero()),
+        MirrorSurface {
+            geometry: SurfaceGeometry::Spherical {
+                radius: Distance::from_meters(1),
+                center: Position3D::zero(),
+            },
+            orientation: glam::Quat::IDENTITY,
+            radius: Distance::from_meters(1),
+        },
+        OpticalMaterial::BRAGG_MIRROR,
+        ThermalState::new(ThermalState::AMBIENT, 5000.0),
+    ));
+    
+    eprintln!("STARTUP: Mirror spawned!");
+}
 
-    // Initialize simulation
+fn run_simulation(gui_state: Arc<Mutex<SimulationState>>) {
     let config = SimulationConfig::default();
     let mut world = World::new();
-    let mut schedule = Schedule::default();
-
-    // Register resources
+    
     world.insert_resource(SimulationTime::default());
     world.insert_resource(DropletGeneratorConfig::default());
     world.insert_resource(DropletGeneratorState::default());
@@ -127,20 +130,24 @@ fn run_simulation(gui_state: Arc<Mutex<SimulationState>>) {
     world.insert_resource(RayTracingStatistics::default());
     world.insert_resource(ThermalStatistics::default());
 
-    // Build the system execution schedule
+    let mut startup_schedule = Schedule::default();
+    startup_schedule.add_systems(spawn_mirrors_startup);
+    startup_schedule.run(&mut world);
+
+    let mut schedule = Schedule::default();
     schedule.add_systems((
         droplet_generator_system,
         laser_targeting_system,
-        laser_droplet_interaction_system,
         physics_movement_system,
+        laser_droplet_interaction_system,
         plasma_to_debris_system,
         photon_mirror_interaction_system,
         photon_cleanup_system,
         thermal_dissipation_system,
         thermal_warning_system,
-        lifetime_system,
         raytracing_statistics_system,
         thermal_statistics_system,
+        lifetime_system,
     ));
 
     println!("Configuration:");
@@ -150,21 +157,30 @@ fn run_simulation(gui_state: Arc<Mutex<SimulationState>>) {
     println!("  Expected ticks: {}\n", 
         (config.total_duration / config.tick_duration) as u32);
 
-    // Run simulation loop
     let start_time = std::time::Instant::now();
     let mut tick_count = 0u64;
     let mut last_report = 0u64;
     
     while world.resource::<SimulationTime>().total_seconds < config.total_duration as f64 {
-        // Update simulation time
         world.resource_mut::<SimulationTime>().tick(config.tick_duration);
         
-        // Execute all systems
         schedule.run(&mut world);
         
         tick_count += 1;
 
-        // Progress reporting every 100k ticks
+        if tick_count % 100 == 0 {
+            if let Ok(mut state) = gui_state.lock() {
+                let time = world.resource::<SimulationTime>();
+                let thermal = world.resource::<ThermalStatistics>();
+                let rays = world.resource::<RayTracingStatistics>();
+                
+                state.simulation_time_us = time.total_seconds * 1e6;
+                state.max_temperature = thermal.max_temperature;
+                state.avg_temperature = thermal.avg_temperature;
+                state.active_photons = rays.active_photon_packets;
+            }
+        }
+
         if tick_count - last_report >= 100_000 {
             last_report = tick_count;
             let sim_time = world.resource::<SimulationTime>().total_seconds;
@@ -180,9 +196,8 @@ fn run_simulation(gui_state: Arc<Mutex<SimulationState>>) {
 
     let elapsed = start_time.elapsed();
     
-    // Final statistics
     println!("\n╔═══════════════════════════════════════════════════════╗");
-    println!("║  Simulation Complete                                 ║");
+    println!("║  Simulation Complete                                  ║");
     println!("╚═══════════════════════════════════════════════════════╝");
     
     let droplet_count = world.resource::<DropletGeneratorState>().droplet_count;
@@ -198,7 +213,6 @@ fn run_simulation(gui_state: Arc<Mutex<SimulationState>>) {
     println!("  Ticks per second: {:.2}M", 
         tick_count as f64 / elapsed.as_secs_f64() / 1e6);
 
-    // Entity count analysis
     let mut entity_counts = std::collections::HashMap::new();
     for entity in world.iter_entities() {
         if let Some(entity_type) = entity.get::<EntityType>() {
@@ -240,16 +254,18 @@ mod tests {
         world.insert_resource(DropletGeneratorConfig::default());
         world.insert_resource(DropletGeneratorState::default());
 
+        let mut startup_schedule = Schedule::default();
+        startup_schedule.add_systems(spawn_mirrors_startup);
+        startup_schedule.run(&mut world);
+
         let mut schedule = Schedule::default();
         schedule.add_systems(droplet_generator_system);
 
-        // Run a few ticks
         for _ in 0..100 {
             world.resource_mut::<SimulationTime>().tick(1e-6);
             schedule.run(&mut world);
         }
 
-        // Should have spawned droplets
         let state = world.resource::<DropletGeneratorState>();
         assert!(state.droplet_count > 0);
     }
