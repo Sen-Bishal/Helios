@@ -4,6 +4,8 @@
 Feel free to watch the video btw -> https://www.youtube.com/watch?v=MiUHjLxm3V0
 i got some good brainrot content as well if that's more up your alley <3
 
+https://github.com/user-attachments/assets/181acd18-ce1c-4a9f-8cc6-a323a4f0a245
+
 ## System Architecture
 
 The system is built on three architectural pillars to ensure the sub nanometer precision required for 13.5nm wavelength simulation.
