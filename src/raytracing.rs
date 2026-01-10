@@ -41,46 +41,59 @@ pub fn photon_mirror_interaction_system(
     mut mirrors: Query<(&Position, &MirrorSurface, &OpticalMaterial, &mut ThermalState), Without<PhotonPacket>>,
     mut stats: ResMut<RayTracingStatistics>,
 ) {
-    let mut rng = rand::thread_rng();
+    if mirrors.is_empty() {
+        return;
+    }
+
+    let (_, mirror_surface, mirror_material, _) = mirrors.single();
+    
+    let (mirror_center, mirror_radius) = match &mirror_surface.geometry {
+        crate::optics::SurfaceGeometry::Spherical { radius, center } => {
+            (*center, radius.as_meters_f64() as f32)
+        }
+        _ => return,
+    };
+
+    let mut absorbed_heat = 0.0f32;
+    let mut to_despawn = Vec::new();
+    let mirror_center_vec = mirror_center.to_vec3();
 
     for (photon_entity, mut photon_pos, mut photon_vel, mut packet) in photons.iter_mut() {
         if packet.bounces >= PhotonPacket::MAX_BOUNCES {
-            commands.entity(photon_entity).despawn();
+            to_despawn.push(photon_entity);
             continue;
         }
 
-        let photon_position = photon_pos.0;
+        let photon_vec = photon_pos.0.to_vec3();
+        let distance = photon_vec.distance(mirror_center_vec);
+        
+        if distance <= mirror_radius {
+            let mut rng = rand::thread_rng();
+            let reflects = rng.gen::<f32>() < mirror_material.reflectivity;
 
-        for (mirror_pos, mirror_surface, material, mut thermal) in mirrors.iter_mut() {
-            let is_inside_or_near = match &mirror_surface.geometry {
-                crate::optics::SurfaceGeometry::Spherical { radius, center } => {
-                    let distance = photon_position.distance_to(center);
-                    distance <= *radius
-                }
-                _ => false,
-            };
-
-            if is_inside_or_near {
-                let reflects = rng.gen::<f32>() < material.reflectivity;
-
-                if reflects {
-                    let ray_direction = photon_vel.0.normalize();
-                    let normal = mirror_surface.geometry.normal_at(photon_position);
-                    let reflected = ray_direction - 2.0 * ray_direction.dot(normal) * normal;
-                    
-                    photon_vel.0 = reflected.normalize() * photon_vel.0.length();
-                    packet.bounces += 1;
-                    stats.total_reflections += 1;
-                } else {
-                    let absorbed_energy = packet.total_energy() * material.absorption;
-                    thermal.add_heat(absorbed_energy);
-                    stats.total_absorptions += 1;
-                    commands.entity(photon_entity).despawn();
-                }
+            if reflects {
+                let ray_direction = photon_vel.0.normalize();
+                let normal = mirror_surface.geometry.normal_at(photon_pos.0);
+                let reflected = ray_direction - 2.0 * ray_direction.dot(normal) * normal;
                 
-                break;
+                photon_vel.0 = reflected.normalize() * photon_vel.0.length();
+                packet.bounces += 1;
+                stats.total_reflections += 1;
+            } else {
+                absorbed_heat += packet.total_energy() * mirror_material.absorption;
+                stats.total_absorptions += 1;
+                to_despawn.push(photon_entity);
             }
         }
+    }
+
+    if absorbed_heat > 0.0 {
+        let (_, _, _, mut thermal) = mirrors.single_mut();
+        thermal.add_heat(absorbed_heat);
+    }
+
+    for entity in to_despawn {
+        commands.entity(entity).despawn();
     }
 }
 

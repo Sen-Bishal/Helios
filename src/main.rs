@@ -5,6 +5,7 @@ mod interactions;
 mod optics;
 mod raytracing;
 mod thermal;
+mod profiler;
 
 use bevy_ecs::prelude::*;
 use units::*;
@@ -14,6 +15,8 @@ use interactions::*;
 use optics::*;
 use raytracing::*;
 use thermal::*;
+use profiler::*;
+use std::time::Instant;
 
 fn main() {
     println!("╔═══════════════════════════════════════════════════════╗");
@@ -67,19 +70,26 @@ fn main() {
         lifetime_system,
     ));
 
-    let start_time = std::time::Instant::now();
+    let start_time = Instant::now();
     let mut tick_count = 0u64;
     let max_ticks = 50000;
     let report_interval = 5000;
+    
+    let mut tick_times = Vec::with_capacity(max_ticks as usize);
 
     println!("Starting simulation... (50ms total, reporting every 5ms)\n");
-    println!("{:<8} {:<12} {:<10} {:<10} {:<12} {:<12} {:<10} {:<10}", 
-        "Tick", "Time(μs)", "Droplets", "Photons", "Reflections", "Absorptions", "MaxTemp", "AvgBounce");
-    println!("{}", "─".repeat(100));
+    println!("{:<8} {:<12} {:<10} {:<10} {:<12} {:<12} {:<10} {:<10} {:<12}", 
+        "Tick", "Time(μs)", "Droplets", "Photons", "Reflections", "Absorptions", "MaxTemp", "AvgBounce", "TickTime(μs)");
+    println!("{}", "─".repeat(110));
 
     while tick_count < max_ticks {
+        let tick_start = Instant::now();
+        
         world.resource_mut::<SimulationTime>().tick(1e-6);
         schedule.run(&mut world);
+        
+        let tick_duration = tick_start.elapsed();
+        tick_times.push(tick_duration);
         tick_count += 1;
 
         if tick_count % report_interval == 0 {
@@ -92,7 +102,14 @@ fn main() {
             
             let photons = world.query::<&PhotonPacket>().iter(&world).count();
             
-            println!("{:<8} {:<12.1} {:<10} {:<10} {:<12} {:<12} {:<10.2} {:<10.2}", 
+            let avg_tick_time = if tick_times.len() >= 1000 {
+                let recent: f64 = tick_times.iter().rev().take(1000).map(|d| d.as_secs_f64()).sum();
+                recent / 1000.0 * 1_000_000.0
+            } else {
+                0.0
+            };
+            
+            println!("{:<8} {:<12.1} {:<10} {:<10} {:<12} {:<12} {:<10.2} {:<10.2} {:<12.2}", 
                 tick_count,
                 sim_time,
                 droplet_count,
@@ -100,7 +117,8 @@ fn main() {
                 total_reflections,
                 total_absorptions,
                 max_temperature,
-                average_bounces
+                average_bounces,
+                avg_tick_time
             );
         }
     }
@@ -110,9 +128,30 @@ fn main() {
     let thermal_stats = world.resource::<ThermalStatistics>();
     let sim_time = world.resource::<SimulationTime>().total_seconds;
 
-    println!("\n{}", "═".repeat(100));
+    println!("\n{}", "═".repeat(110));
+    println!("PERFORMANCE ANALYSIS");
+    println!("{}", "═".repeat(110));
+    
+    let avg_tick = tick_times.iter().map(|d| d.as_secs_f64()).sum::<f64>() / tick_times.len() as f64;
+    let min_tick = *tick_times.iter().min().unwrap();
+    let max_tick = *tick_times.iter().max().unwrap();
+    
+    tick_times.sort();
+    let p50 = tick_times[tick_times.len() / 2];
+    let p95 = tick_times[(tick_times.len() as f64 * 0.95) as usize];
+    let p99 = tick_times[(tick_times.len() as f64 * 0.99) as usize];
+    
+    println!("\n┌─ Tick Performance");
+    println!("│  ├─ Average: {:.2} μs", avg_tick * 1_000_000.0);
+    println!("│  ├─ Median (p50): {:.2} μs", p50.as_secs_f64() * 1_000_000.0);
+    println!("│  ├─ p95: {:.2} μs", p95.as_secs_f64() * 1_000_000.0);
+    println!("│  ├─ p99: {:.2} μs", p99.as_secs_f64() * 1_000_000.0);
+    println!("│  ├─ Min: {:.2} μs", min_tick.as_secs_f64() * 1_000_000.0);
+    println!("│  └─ Max: {:.2} μs", max_tick.as_secs_f64() * 1_000_000.0);
+
+    println!("\n{}", "═".repeat(110));
     println!("SIMULATION COMPLETE");
-    println!("{}", "═".repeat(100));
+    println!("{}", "═".repeat(110));
     
     println!("\n┌─ Performance Metrics");
     println!("│  ├─ Total ticks: {}", tick_count);
